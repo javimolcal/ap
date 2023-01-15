@@ -1,0 +1,932 @@
+---
+title: "Anàlisi descriptiva índex de privació (MEDEA)"
+author: "Javi Molero"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+---
+
+```{r debug, include=FALSE}
+library(tidyverse)
+library(gtsummary)
+library(DescTools)
+library(flextable)
+library(summarytools)
+library(ggplot2)
+library(nortest)
+library(ggupset)
+library(hrbrthemes)
+library(DT)
+library(DiagrammeR)
+library(DiagrammeRsvg)
+library(rsvg)
+
+setwd("/Users/javi/Desktop/Versió 2")
+getwd()
+
+up_pob_medea9 <- read.delim("up_poblacio_medea.txt", header = TRUE, sep = "@",
+                           dec = ".", colClasses = c("character", "integer", "numeric"))
+
+centres_aquas <- read.delim("cat_centres_202210131348.txt", header = TRUE, sep = "@",
+                               dec = ".", colClasses = c("character", "character", "character", "character", "numeric"))
+
+up_medea0 <- read.delim("medea_eap_antic.txt", header = TRUE, sep = "@",
+                               dec = ".", colClasses = c("character", "numeric", "character"))
+
+idescat <- read.delim("dades_idescat.txt", header = TRUE, sep = "@",
+                    dec = ".", colClasses = c("character", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric"))
+
+medea_merged <- merge(centres_aquas, up_pob_medea9, by.x = "scs_codi", by.y = "UP",
+                            all.x = TRUE, all.y = TRUE)
+
+medea_merged <- merge(medea_merged, up_medea0, by.x = "ics_codi", by.y = "codi",
+                      all.x = TRUE, all.y = TRUE)
+
+medea_merged <- merge(medea_merged, idescat, by.x = "scs_codi", by.y = "up",
+                      all.x = TRUE, all.y = TRUE)
+
+medea_merged$medea_cont_antic <- round(medea_merged$medea_cont_antic, digits = 3)
+
+medea_merged$medea_cont_nou <- round(medea_merged$medea_cont_nou, digits = 3)
+
+missings <- medea_merged[!complete.cases(medea_merged), ]
+
+medea_merged$pob_cate <- ifelse(medea_merged$POBLACIO < 10000, "0-<10000",
+                                      ifelse(medea_merged$POBLACIO < 20000, "10000-<20000",
+                                             ifelse(medea_merged$POBLACIO <30000, "20000-<30000",
+                                                    ifelse(medea_merged$POBLACIO >=30000, ">=30000", NA))))
+
+medea_merged$entorn <- ifelse(medea_merged$medea_cate_antic %like% "%R", "Rural",
+                                    ifelse(medea_merged$medea_cate_antic %like% "%U", "Urbà", NA))
+
+medea_merged$medea_cate_2 <- ifelse(medea_merged$medea_cont_nou < 0.1, "1U",
+                                    ifelse(medea_merged$medea_cont_nou <= 0.46, "2U",
+                                           ifelse(medea_merged$medea_cont_nou <= 0.87, "3U", "4U")))
+
+medea_merged$medea_cate_nou <- ifelse(medea_merged$medea_cate_antic %like% "%R", medea_merged$medea_cate_antic,
+                                     ifelse(medea_merged$medea_cate_antic %like% "%U", medea_merged$medea_cate_2, NA))
+```
+
+# {.tabset}
+
+## Metodologia
+
+* Fonts utilitzades:
+    + __cat_centres_202210131322__ (Catàleg de centres a "nodrizas")
+        - Variables: scs_codi, ics_codi, ics_desc, aquas
+        - Núm registres: __375__
+    + __medea_eap_antic__
+        - Variables: codi, medea_cont_antic, medea_cate_antic
+        - Núm registres: __384__
+    + __up_poblacio_medea__
+        - Variables: UP, POBLACIO, medea_cont_nou
+        - Núm registres: __395__
+    + __dades_idescat__
+        - Variables: up, n_pacients, ist, pob_ocupada, treb_baixa_qualitat, pob_estudis_baixos, pob_jove_sense_estudis_postobligatoris, imm_renda_baixa, renda_minima
+        - Núm registres: __369__
+* Després de fer els _merges_ de les 4 taules conservant tots els registres (_full join_), __la bbdd final té 405 registres__.
+
+### Base de dades final (sense excloure registres amb missing)
+
+```{r, echo=FALSE, message=FALSE, error=FALSE}
+medea_merged_dt <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, POBLACIO, medea_cont_antic,
+           medea_cate_antic, medea_cont_nou, medea_cate_nou, aquas, ist))
+
+m_m_dt <- datatable(medea_merged_dt,
+                    rownames = TRUE,
+                    filter="top",
+                    options = list(searching=TRUE,
+                                   pageLength= 10))
+
+m_m_dt
+```
+
+
+### Missings
+
+```{r, echo=FALSE, message=FALSE}
+CountCompCases(medea_merged)
+```
+
+### Taula missings
+
+```{r, echo=FALSE, message=FALSE}
+missings_dt <- datatable(missings,
+                         rownames = TRUE,
+                         filter="top",
+                         options = list(searching=TRUE,
+                                        pageLength= 10))
+
+missings_dt
+```
+
+### Les dades que es mostren a continuació només inclouen _complete cases_ (___complete case analysis_, N = 367__), és a dir, s'exclouen aquells registres amb _missing_ a una o més variables (n = `r 405-367`).
+
+```{r, echo=FALSE, message=FALSE}
+n1 <- nrow(up_medea0)
+n2 <- nrow(up_pob_medea9)
+n3 <- nrow(centres_aquas)
+n4 <- nrow(idescat)
+n5 <- nrow(medea_merged)
+medea_merged_2 <- medea_merged[complete.cases(medea_merged), ]
+n6 <- nrow(medea_merged_2)
+
+flowchart_medea <- grViz("
+      digraph a_nice_graph
+      {
+      
+      node[fontname = Helvetica,
+           fontcolor = black,
+           shape = box,
+           width = 1,
+           style = filled,
+           fillcolor = whitesmoke]
+      
+      '@@1' -> '@@5';
+      '@@2' -> '@@5';
+      '@@3' -> '@@5';
+      '@@4' -> '@@5';
+      '@@5' -> '@@6';
+      }
+
+      [1]: paste0('up+medea_antic', '\\n', 'N = ', n1)
+      [2]: paste0('up+pob+medea_nou', '\\n','N = ', n2)
+      [3]: paste0('up+aquas', '\\n','N = ', n3)
+      [4]: paste0('up+idescat', '\\n','N = ', n4)
+      [5]: paste0('4_merged', '\\n','N = ', n5)
+      [6]: paste0('Complete cases', '\\n','N = ', n6)
+      ", height= 500, width = 800)
+
+flowchart_medea
+
+medea_merged <- medea_merged[complete.cases(medea_merged), ]
+```
+
+
+## Descriptiva univariada {.tabset}
+
+### MEDEA antic (continua)
+
+```{r, echo=FALSE, message=FALSE}
+summary(medea_merged$medea_cont_antic)
+```
+
+Standard deviation
+
+```{r, echo=FALSE, message=FALSE}
+sd(medea_merged$medea_cont_antic, na.rm = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+boxplot(medea_merged$medea_cont_antic, col = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_1 <- ggplot(medea_merged, aes(x=medea_cont_antic)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_1
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+g_m_c_a <- medea_merged[order(medea_merged$medea_cont_antic),]
+g_m_c_a$order <- 1:nrow(g_m_c_a) 
+ggplot(g_m_c_a, aes(x=order, y=medea_cont_antic)) +
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.46, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.87, linetype="dashed", color = "red") +
+  geom_line()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+medea_cate_antic_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, medea_cate_antic))
+
+medea_cate_antic_out_dt <- datatable(medea_cate_antic_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+medea_cate_antic_out_dt
+```
+
+### MEDEA antic (categòrica)
+
+```{r, echo=FALSE}
+medea_ordered_1 <- medea_merged %>%
+  mutate(medea_cate_antic = factor(medea_cate_antic, levels = c("0R",
+                                                                "1R",
+                                                                "2R",
+                                                                "1U",
+                                                                "2U",
+                                                                "3U",
+                                                                "4U")))
+
+freq(medea_ordered_1$medea_cate_antic)
+```
+
+```{r, echo=FALSE}
+g_m_cate <- medea_merged %>% 
+    mutate(medea_cate_antic = factor(medea_cate_antic, levels = c("0R",
+                                                                  "1R",
+                                                                  "2R",
+                                                                  "1U",
+                                                                  "2U",
+                                                                  "3U",
+                                                                  "4U"))) %>% 
+  group_by(medea_cate_antic) %>% 
+  summarise(n=n())
+
+ggplot(g_m_cate, aes(x=medea_cate_antic, y=n)) + 
+  geom_bar(stat = "identity", width=0.5, fill = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+medea_cate_antic_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, medea_cate_antic))
+
+medea_cate_antic_out_dt <- datatable(medea_cate_antic_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+medea_cate_antic_out_dt
+```
+
+### MEDEA nou
+
+```{r, echo=FALSE, message=FALSE}
+summary(medea_merged$medea_cont_nou)
+```
+
+Standard deviation
+
+```{r, echo=FALSE, message=FALSE}
+sd(medea_merged$medea_cont_nou, na.rm = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+boxplot(medea_merged$medea_cont_nou, col = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_1 <- ggplot(medea_merged, aes(x=medea_cont_nou)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_1
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+g_m_n <- medea_merged[order(medea_merged$medea_cont_nou),]
+g_m_n$order <- 1:nrow(g_m_n) 
+ggplot(g_m_n, aes(x=order, y=medea_cont_nou)) +
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.46, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.87, linetype="dashed", color = "red") +
+  geom_line()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+medea_cont_nou_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, medea_cont_nou))
+
+medea_cont_nou_out_dt <- datatable(medea_cont_nou_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+medea_cont_nou_out_dt
+```
+
+### AQuAS
+
+```{r, echo=FALSE, message=FALSE}
+summary(medea_merged$aquas)
+```
+
+Standard deviation
+
+```{r, echo=FALSE, message=FALSE}
+sd(medea_merged$aquas, na.rm = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+boxplot(medea_merged$aquas, col = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_1 <- ggplot(medea_merged, aes(x=aquas)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_1
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+g_a <- medea_merged[order(medea_merged$aquas),]
+g_a$order <- 1:nrow(g_a) 
+ggplot(g_a, aes(x=order, y=aquas)) +
+  geom_line()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+aquas_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, aquas))
+
+aquas_out_dt <- datatable(aquas_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+aquas_out_dt
+```
+
+### Idescat
+
+```{r, echo=FALSE, message=FALSE}
+summary(medea_merged$ist)
+```
+
+Standard deviation
+
+```{r, echo=FALSE, message=FALSE}
+sd(medea_merged$ist, na.rm = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+boxplot(medea_merged$ist, col = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_1 <- ggplot(medea_merged, aes(x=ist)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_1
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+g_i <- medea_merged[order(medea_merged$ist),]
+g_i$order <- 1:nrow(g_i) 
+ggplot(g_i, aes(x=order, y=ist)) +
+  geom_line()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ist_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, ist))
+
+ist_out_dt <- datatable(ist_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+ist_out_dt
+```
+
+### Població (continua)
+
+```{r, echo=FALSE, message=FALSE}
+summary(medea_merged$POBLACIO)
+```
+
+Standard deviation
+
+```{r, echo=FALSE, message=FALSE}
+sd(medea_merged$POBLACIO, na.rm = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE}
+boxplot(medea_merged$POBLACIO, col = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_1 <- ggplot(medea_merged, aes(x=POBLACIO)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_1
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+g_p <- medea_merged[order(medea_merged$POBLACIO),]
+g_p$order <- 1:nrow(g_p) 
+ggplot(g_p, aes(x=order, y=POBLACIO)) +
+  geom_line()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+poblacio_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, POBLACIO))
+
+poblacio_out_dt <- datatable(poblacio_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+poblacio_out_dt
+```
+
+### Població (categòrica)
+
+```{r, echo=FALSE}
+medea_ordered_2 <- medea_merged %>% 
+    mutate(pob_cate = factor(pob_cate, levels = c("0-<10000",
+                                                "10000-<20000",
+                                                "20000-<30000",
+                                                ">=30000")))
+
+freq(medea_ordered_2$pob_cate)
+```
+
+```{r, echo=FALSE}
+g_p_cate <- medea_merged %>% 
+  mutate(pob_cate = factor(pob_cate, levels = c("0-<10000",
+                                                "10000-<20000",
+                                                "20000-<30000",
+                                                ">=30000"))) %>% 
+  group_by(pob_cate) %>% 
+  summarise(n=n())
+
+ggplot(g_p_cate, aes(x=pob_cate, y=n)) + 
+  geom_bar(stat = "identity", width=0.5, fill = "#69b3a2")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pob_cate_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, POBLACIO, pob_cate))
+
+pob_cate_out_dt <- datatable(pob_cate_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                               pageLength= 10))
+
+pob_cate_out_dt
+```
+
+## Descriptiva bivariada {.tabset}
+
+### MEDEA nou {.tabset}
+
+#### MEDEA antic (continua)
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (MEDEA nou)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$medea_cont_nou)
+```
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (MEDEA antic)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$medea_cont_antic)
+```
+
+##### Pearson correlation test
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_nou, medea_merged$medea_cont_antic)
+```
+
+##### Spearman rank correlation coefficient
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_nou, medea_merged$medea_cont_antic,  method = "spearman")
+
+ggplot(medea_merged, aes(x=medea_cont_nou, y=medea_cont_antic)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum()
+```
+
+##### Centres ordenats segons MEDEA antic i nou (dos centres diferents en un mateix punt de la gràfica)
+
+```{r, echo=FALSE, message=FALSE}
+g_m_2 <- merge(x=g_m_c_a, y=g_m_n, by.x = "order", by.y = "order", all.x = TRUE, all.y = TRUE)
+ggplot() +
+  geom_line(data = g_m_2, aes(y = medea_cont_antic.x, x=order, color="Antic"), size = 0.8) + 
+  geom_line(data = g_m_2, aes(y = medea_cont_nou.y, x=order, color="Nou"), size = 0.8) +
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.46, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.87, linetype="dashed", color = "red") +
+  labs(y = "medea_cont_nous MEDEA",
+       x = "order") +
+  scale_color_manual(name = "MEDEA",values = c("Antic" = "black", "Nou" = "steelblue"))
+```
+
+##### Centres ordenats segons MEDEA antic (el mateix centre a cada punt de la gràfica)
+
+```{r, echo=FALSE, message=FALSE}
+g_m_c_a_n_o <- medea_merged[order(medea_merged$medea_cont_antic),]
+g_m_c_a_n_o$order <- 1:nrow(g_m_c_a_n_o)
+ggplot() +
+  geom_line(data = g_m_c_a_n_o, aes(y = medea_cont_antic, x=order, color="Antic"), size = 0.8) + 
+  geom_line(data = g_m_c_a_n_o, aes(y = medea_cont_nou, x=order, color="Nou"), size = 0.8) +
+  geom_hline(yintercept=0.1, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.46, linetype="dashed", color = "red") +
+  geom_hline(yintercept=0.87, linetype="dashed", color = "red") +
+  labs(y = "Valors MEDEA",
+       x = "order") +
+  scale_color_manual(name = "MEDEA",values = c("Antic" = "black", "Nou" = "steelblue"))
+```
+
+##### Taula amb la diferència medea_cont_antic - medea_cont_nou
+
+```{r, echo=FALSE, message=FALSE, error=FALSE}
+medea_merged$dif_medea <- medea_merged$medea_cont_nou - medea_merged$medea_cont_antic
+
+medea_merged$dif_medea <- round(medea_merged$dif_medea, digits = 3)
+
+medea_merged$abs_dif_medea <- abs(medea_merged$dif_medea)
+
+dif_out <- medea_merged %>% 
+  select(c(scs_codi, ics_codi, ics_desc, abs_dif_medea, dif_medea, medea_cont_antic, medea_cont_nou, medea_cate_antic, medea_cate_nou))
+
+dif_out_dt <- datatable(dif_out, rownames = FALSE, filter="top", options = list(searching=TRUE,
+                                                                                          pageLength= 10))
+
+dif_out_dt
+```
+
+#### AQuAS
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (MEDEA nou)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$medea_cont_nou)
+```
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (AQuAS)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$aquas)
+```
+
+##### Pearson correlation test
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_nou, medea_merged$aquas)
+```
+
+##### Spearman rank correlation coefficient
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_nou, medea_merged$aquas,  method = "spearman")
+
+ggplot(medea_merged, aes(x=medea_cont_nou, y=aquas)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum()
+
+#g_m_3 <- merge(x=g_a, y=g_m_n, by.x = "order", by.y = "order", all.x = TRUE, all.y = TRUE)
+#ggplot() +
+  #geom_line(data = g_m_3, aes(y = aquas.x, x=order, color="AQuAS"), size = 0.8) + 
+  #geom_line(data = g_m_3, aes(y = medea_cont_nou.y, x=order, color="MEDEA nou"), size = 0.8) +
+  #labs(y = "medea_cont_nous",
+       #x = "order") +
+  #scale_color_manual(name = "Índex",values = c("AQuAS" = "black", "MEDEA nou" = "steelblue"))
+```
+
+#### Idescat
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (MEDEA nou)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$medea_cont_nou)
+```
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (Idescat)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$ist)
+```
+
+##### Pearson correlation test
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_nou, medea_merged$ist)
+```
+
+##### Spearman rank correlation coefficient
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_nou, medea_merged$ist,  method = "spearman")
+
+ggplot(medea_merged, aes(x=medea_cont_nou, y=ist)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum()
+
+#g_m_4 <- merge(x=g_i, y=g_m_n, by.x = "order", by.y = "order", all.x = TRUE, all.y = TRUE)
+#ggplot() +
+  #geom_line(data = g_m_4, aes(y = ist.x, x=order, color="Idescat"), size = 0.8) + 
+  #geom_line(data = g_m_4, aes(y = medea_cont_nou.y, x=order, color="MEDEA nou"), size = 0.8) +
+  #labs(y = "medea_cont_nous",
+       #x = "order") +
+  #scale_color_manual(name = "Índex",values = c("Idescat" = "black", "MEDEA nou" = "steelblue"))
+```
+
+### MEDEA antic (continua) {.tabset}
+
+#### AQuAS
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (MEDEA antic)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$medea_cont_antic)
+```
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (AQuAS)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$aquas)
+```
+
+##### Pearson correlation test
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_antic, medea_merged$aquas)
+```
+
+##### Spearman rank correlation coefficient
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_antic, medea_merged$aquas,  method = "spearman")
+
+ggplot(medea_merged, aes(x=medea_cont_antic, y=aquas)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum()
+```
+
+#### Idescat
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (MEDEA nou)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$medea_cont_antic)
+```
+
+##### Lilliefors (Kolmogorov-Smirnov) test for normality (Idescat)
+
+```{r, echo=FALSE}
+lillie.test(medea_merged$ist)
+```
+
+##### Pearson correlation test
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_antic, medea_merged$ist)
+```
+
+##### Spearman rank correlation coefficient
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+cor.test(medea_merged$medea_cont_antic, medea_merged$ist,  method = "spearman")
+
+ggplot(medea_merged, aes(x=medea_cont_antic, y=ist)) +
+  geom_point() +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  theme_ipsum()
+```
+
+### MEDEA antic (categòrica) {.tabset}
+
+#### Entorn (Rural-Urbà)
+
+```{r taula2, echo=FALSE, message=FALSE}
+taula_entorn <- medea_merged %>%
+  select(POBLACIO, entorn, medea_cont_antic, medea_cont_nou, aquas, ist) %>%
+  tbl_summary(by="entorn",
+              missing = "no",
+              percent="column",
+              statistic = list(all_continuous() ~ "{mean} ({sd})",        
+                               all_categorical() ~ "{n} ({p}%)"),
+              label  = list(POBLACIO ~ "Població (continua)",
+                            medea_cont_antic ~ "Índex MEDEA antic (continua)",
+                            medea_cont_nou ~ "Índex MEDEA nou (continua)",
+                            aquas ~ "Índex AQUAS",
+                            ist ~ "Índex Idescat")) %>% 
+  add_n() %>% 
+  add_p() %>%
+  add_overall() %>% 
+  italicize_levels() %>% 
+  bold_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels()
+
+taula_entorn
+```
+
+#### Categories MEDEA
+
+```{r taula3, echo=FALSE, message=FALSE}
+taula_medea <- medea_merged %>%
+  mutate(medea_cate_antic = factor(medea_cate_antic, levels = c("0R",
+                                                                "1R",
+                                                                "2R",
+                                                                "1U",
+                                                                "2U",
+                                                                "3U",
+                                                                "4U"))) %>% 
+  select(POBLACIO, medea_cate_antic, medea_cont_antic, medea_cont_nou, aquas, ist) %>%
+  tbl_summary(by="medea_cate_antic",
+              missing = "no",
+              percent="column",
+              statistic = list(all_continuous() ~ "{mean} ({sd})",        
+                               all_categorical() ~ "{n} ({p}%)"),
+              label  = list(POBLACIO ~ "Població (continua)",
+                            medea_cont_antic ~ "Índex MEDEA antic (continua)",
+                            medea_cont_nou ~ "Índex MEDEA nou (continua)",
+                            aquas ~ "Índex AQUAS",
+                            ist ~ "Índex Idescat")) %>% 
+  add_n() %>% 
+  add_p() %>%
+  add_overall() %>% 
+  italicize_levels() %>% 
+  bold_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels()
+
+taula_medea
+```
+
+#### MEDEA nou (categòrica)
+
+```{r, echo=FALSE, message=FALSE}
+medea_2x2 <- medea_merged %>% 
+  select(medea_cate_antic, medea_cate_nou) %>% 
+  filter(medea_cate_antic %like% "%U")
+
+table(medea_2x2$medea_cate_antic, medea_2x2$medea_cate_nou)
+```
+
+##### ABS on canvia la categoria de MEDEA
+
+```{r, echo=FALSE, message=FALSE}
+medea_merged$m_c_a_n <- ifelse(medea_merged$medea_cate_antic == medea_merged$medea_cate_nou, 1, 0)
+
+medea_disc <- medea_merged %>% 
+  filter(m_c_a_n == 0)
+
+medea_disc <- medea_disc %>% 
+  select(c(scs_codi, ics_codi, ics_desc, medea_cate_antic, medea_cate_nou, abs_dif_medea, dif_medea, medea_cont_antic, medea_cont_nou))
+
+m_d_dt <- datatable(medea_disc,
+                    rownames = TRUE,
+                    filter="top",
+                    options = list(searching=TRUE,
+                                   pageLength= 25))
+
+m_d_dt
+```
+
+## Reassignació punts de tall MEDEA antic
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+medea_merged$medea_cate_antic_reas <- ifelse(medea_merged$medea_cont_antic < 0.1, "1U",
+                                         ifelse(medea_merged$medea_cont_antic <= 0.46, "2U",
+                                             ifelse(medea_merged$medea_cont_antic <= 0.87, "3U", "4U")))
+
+medea_antic_2x2 <- medea_merged %>% 
+  select(medea_cate_antic, medea_cate_antic_reas) %>% 
+  filter(medea_cate_antic %like% "%U")
+
+table(medea_antic_2x2$medea_cate_antic, medea_antic_2x2$medea_cate_antic_reas)
+```
+
+##### ABS on canvia la categoria de MEDEA antic
+
+```{r, echo=FALSE, message=FALSE}
+medea_merged$m_c_a_ar <- ifelse(medea_merged$medea_cate_antic == medea_merged$medea_cate_antic_reas, 1, 0)
+
+medea_a_disc <- medea_merged %>% 
+  filter(m_c_a_ar == 0)
+
+medea_a_disc <- medea_a_disc %>% 
+  filter(medea_cate_antic %like% "%U") %>% 
+  select(c(scs_codi, ics_codi, ics_desc, medea_cate_antic, medea_cate_antic_reas, medea_cate_nou, abs_dif_medea, dif_medea, medea_cont_antic, medea_cont_nou))
+
+m_a_d_dt <- datatable(medea_a_disc,
+                    rownames = TRUE,
+                    filter="top",
+                    options = list(searching=TRUE,
+                                   pageLength= 10))
+
+m_a_d_dt
+```
+
+## EAP La Roca del Vallès {.tabset}
+
+### Totes les UP
+
+```{r, echo=FALSE, message=FALSE}
+roca <- read.csv("pacients_eap_roca_valles.csv", header = TRUE, sep = ";")
+
+summary(roca$VALOR)
+```
+
+sd(`r sd(roca$VALOR)`)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_sec <- ggplot(roca, aes(x=VALOR)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_sec
+
+freq_roca <- freq(roca$SECCIO)
+
+freq_roca_dt <- datatable(freq_roca,
+                    rownames = TRUE,
+                    filter="top",
+                    options = list(searching=TRUE,
+                                   pageLength= 10))
+
+freq_roca_dt
+
+seccio <- roca %>% 
+  select(c(SECCIO, VALOR)) %>% 
+  group_by(SECCIO, VALOR) %>% 
+  summarise(n())
+
+freq(seccio$`n()`)
+
+sec_roca <- datatable(seccio,
+                      rownames = TRUE,
+                      filter="top",
+                      options = list(searching=TRUE,
+                                   pageLength= 10))
+
+sec_roca
+```
+
+### Només UP La Roca del Vallès
+
+```{r, echo=FALSE, message=FALSE}
+eap_roca <- roca %>% 
+  filter(RCA_UP == 1121)
+
+summary(eap_roca$VALOR)
+```
+
+sd(`r sd(eap_roca$VALOR)`)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_sec_eap <- ggplot(eap_roca, aes(x=VALOR)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_sec_eap
+
+freq_eap_roca <- freq(eap_roca$SECCIO)
+
+freq_eap_roca_dt <- datatable(freq_eap_roca,
+                    rownames = TRUE,
+                    filter="top",
+                    options = list(searching=TRUE,
+                                   pageLength= 10))
+
+freq_eap_roca_dt
+
+seccio_eap_roca <- roca %>% 
+  filter(RCA_UP == 1121) %>% 
+  select(c(SECCIO, VALOR)) %>% 
+  group_by(SECCIO, VALOR) %>% 
+  summarise(n()) 
+
+freq(seccio_eap_roca$`n()`)
+
+sec_eap_roca <- datatable(seccio_eap_roca,
+                          rownames = TRUE,
+                          filter="top",
+                          options = list(searching=TRUE,
+                                   pageLength= 10))
+
+sec_eap_roca
+```
+
+### Altres UP
+
+```{r, echo=FALSE, message=FALSE}
+eap_no_roca <- roca %>% 
+  filter(RCA_UP != 1121)
+
+summary(eap_no_roca$VALOR)
+```
+
+sd(`r sd(eap_no_roca$VALOR)`)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+hist_sec_no_eap <- ggplot(eap_no_roca, aes(x=VALOR)) + 
+  geom_histogram(fill="#69b3a2", color="#e9ecef")
+
+hist_sec_no_eap
+
+freq_no_eap_roca <- freq(eap_no_roca$SECCIO)
+
+freq_no_eap_roca_dt <- datatable(freq_no_eap_roca,
+                    rownames = TRUE,
+                    filter="top",
+                    options = list(searching=TRUE,
+                                   pageLength= 10))
+
+freq_no_eap_roca_dt
+
+seccio_no_eap_roca <- roca %>% 
+  filter(RCA_UP != 1121) %>% 
+  select(c(SECCIO, VALOR)) %>% 
+  group_by(SECCIO, VALOR) %>% 
+  summarise(n()) 
+
+freq(seccio_no_eap_roca$`n()`)
+
+sec_no_eap_roca <- datatable(seccio_no_eap_roca,
+                          rownames = TRUE,
+                          filter="top",
+                          options = list(searching=TRUE,
+                                   pageLength= 10))
+
+sec_no_eap_roca
+```

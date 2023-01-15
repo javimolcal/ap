@@ -1,0 +1,209 @@
+---
+title: Impacte d’una intervenció educativa en professionals sanitaris per millorar el cribratge de VIH en Atenció Primària. Informe de resultats.
+author: "Javi Molero"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+A aquest informe s'inclouen només **les proves de cribratge de VIH demanades per algun dels centres que participen a l'estudi**.
+
+# {.tabset}
+
+## Juliol - Desembre 2019 {.tabset}
+
+### Taules {.tabset}
+
+```{r debug, include=FALSE}
+library(readxl)
+library(tidyverse)
+library(crosstable)
+library(gtsummary)
+
+bbdd_r4 <- read_xlsx("~/Desktop/projecte resis muntanya/bbdd_5_2.xlsx")
+
+bbdd_r4$EAP_pacient <- ifelse(bbdd_r4$up == "352", "Montcada-Indianes",
+                              ifelse(bbdd_r4$up == "451", "Chafarinas",
+                                     ifelse(bbdd_r4$up == "452", "Via Barcino",
+                                            ifelse(bbdd_r4$up == "453", "Bon Pastor",
+                                                   ifelse(bbdd_r4$up == "448", "El Carmel",
+                                                          ifelse(bbdd_r4$up == "449", "Roquetes", NA))))))
+```
+
+#### Per grup control/intervenció
+
+```{r taula_1, echo=FALSE}
+taula_1 <- bbdd_r4 %>% 
+  mutate(particip_eap = case_when(particip_eap== 0 ~ "EAPs control",
+                                  particip_eap== 1 ~ "EAPs intervenció")) %>% 
+  mutate(SEXE = case_when(SEXE== "D" ~ "Dona", SEXE== "H" ~ "Home")) %>% 
+  mutate(crib_3 = case_when(crib_3== 1 ~ "Sí", crib_3== 0 ~ "No")) %>% 
+  mutate(CR_RES_LAB = case_when(CR_RES_LAB == "Positiu VIH-1/ Negatiu VIH-2" ~ "Positiu",
+                                CR_RES_LAB == "Positiu" ~ "Positiu",
+                                CR_RES_LAB == "Negatiu" ~ "Negatiu")) %>%
+  select(particip_eap, SEXE, EDAT_2019, EAP_pacient, Sífilis, Gonococ, Clamídia,
+         `Altres ITS`, `Herpes Zòster`, `Hepatitis B`, `Hepatitis C`,
+         `Mononucleosi infecciosa`, Pneumònia, crib_3, CR_RES_LAB) %>%
+  tbl_summary(by = "particip_eap",
+              percent="column",
+              statistic = list(all_continuous() ~ "{mean} ({sd})",        
+                               all_categorical() ~ "{n} ({p}%)"),
+              label  = list(SEXE ~ "Sexe",
+                            EDAT_2019 ~ "Edat",
+                            EAP_pacient ~ "Equip d'Atenció Primària",
+                            crib_3 ~ "Cribratge de VIH",
+                            CR_RES_LAB ~ "Resultat del cribratge de VIH"),
+              missing_text = "Desconegut",
+              missing = "always"
+  ) %>% 
+  #add_n() %>% 
+  add_p() %>%
+  add_overall() %>% 
+  italicize_levels() %>% 
+  bold_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels()
+
+taula_1
+```
+
+#### Per Centre d'Atenció Primària
+
+```{r taula_2, echo=FALSE}
+taula_2 <- bbdd_r4 %>% 
+  mutate(particip_eap = case_when(particip_eap== 0 ~ "EAPs control",
+                                  particip_eap== 1 ~ "EAPs intervenció")) %>% 
+  mutate(SEXE = case_when(SEXE== "D" ~ "Dona", SEXE== "H" ~ "Home")) %>% 
+  mutate(crib_3 = case_when(crib_3== 1 ~ "Sí", crib_3== 0 ~ "No")) %>% 
+  mutate(CR_RES_LAB = case_when(CR_RES_LAB == "Positiu VIH-1/ Negatiu VIH-2" ~ "Positiu",
+                                CR_RES_LAB == "Positiu" ~ "Positiu",
+                                CR_RES_LAB == "Negatiu" ~ "Negatiu")) %>%
+  select(EAP_pacient, SEXE, EDAT_2019, Sífilis, Gonococ, Clamídia,
+         `Altres ITS`, `Herpes Zòster`, `Hepatitis B`, `Hepatitis C`,
+         `Mononucleosi infecciosa`, Pneumònia, crib_3, CR_RES_LAB) %>%
+  tbl_summary(by = "EAP_pacient",
+              percent="column",
+              statistic = list(all_continuous() ~ "{mean} ({sd})",        
+                               all_categorical() ~ "{n} ({p}%)"),
+              label  = list(SEXE ~ "Sexe",
+                            EDAT_2019 ~ "Edat",
+                            crib_3 ~ "Cribratge de VIH",
+                            CR_RES_LAB ~ "Resultat del cribratge de VIH"),
+              missing_text = "Desconegut",
+              missing = "always"
+  ) %>% 
+  #add_n() %>% 
+  add_p() %>%
+  add_overall() %>% 
+  italicize_levels() %>% 
+  bold_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels()
+
+taula_2
+```
+
+#### Per cribratge de VIH {.tabset}
+
+##### Grup control
+
+```{r taula_3, echo=FALSE}
+taula_3 <- bbdd_r4 %>% 
+  filter(particip_eap == 0) %>% 
+  mutate(SEXE = case_when(SEXE== "D" ~ "Dona", SEXE== "H" ~ "Home")) %>% 
+  mutate(crib_3 = case_when(crib_3== 1 ~ "Cribratge VIH", crib_3== 0 ~ "No cribratge VIH")) %>% 
+  mutate(CR_RES_LAB = case_when(CR_RES_LAB == "Positiu VIH-1/ Negatiu VIH-2" ~ "Positiu",
+                                CR_RES_LAB == "Positiu" ~ "Positiu",
+                                CR_RES_LAB == "Negatiu" ~ "Negatiu")) %>%
+  select(crib_3, EAP_pacient, SEXE, EDAT_2019, Sífilis, Gonococ, Clamídia,
+         `Altres ITS`, `Herpes Zòster`, `Hepatitis B`, `Hepatitis C`,
+         `Mononucleosi infecciosa`, Pneumònia, CR_RES_LAB) %>%
+  tbl_summary(by = "crib_3",
+              percent="column",
+              statistic = list(all_continuous() ~ "{mean} ({sd})",        
+                               all_categorical() ~ "{n} ({p}%)"),
+              label  = list(SEXE ~ "Sexe",
+                            EDAT_2019 ~ "Edat",
+                            CR_RES_LAB ~ "Resultat del cribratge de VIH",
+                            EAP_pacient ~ "Equip d'Atenció Primària"),
+              missing_text = "Desconegut",
+              missing = "always"
+  ) %>% 
+  #add_n() %>% 
+  add_p() %>%
+  add_overall() %>% 
+  italicize_levels() %>% 
+  bold_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels()
+
+taula_3
+```
+
+##### Grup intervenció
+
+```{r taula_4, echo=FALSE}
+taula_4 <- bbdd_r4 %>% 
+  filter(particip_eap == 1) %>% 
+  mutate(SEXE = case_when(SEXE== "D" ~ "Dona", SEXE== "H" ~ "Home")) %>% 
+  mutate(crib_3 = case_when(crib_3== 1 ~ "Cribratge VIH", crib_3== 0 ~ "No cribratge VIH")) %>% 
+  mutate(CR_RES_LAB = case_when(CR_RES_LAB == "Positiu VIH-1/ Negatiu VIH-2" ~ "Positiu",
+                                CR_RES_LAB == "Positiu" ~ "Positiu",
+                                CR_RES_LAB == "Negatiu" ~ "Negatiu")) %>%
+  select(crib_3, EAP_pacient, SEXE, EDAT_2019, Sífilis, Gonococ, Clamídia,
+         `Altres ITS`, `Herpes Zòster`, `Hepatitis B`, `Hepatitis C`,
+         `Mononucleosi infecciosa`, Pneumònia, CR_RES_LAB) %>%
+  tbl_summary(by = "crib_3",
+              percent="column",
+              statistic = list(all_continuous() ~ "{mean} ({sd})",        
+                               all_categorical() ~ "{n} ({p}%)"),
+              label  = list(SEXE ~ "Sexe",
+                            EDAT_2019 ~ "Edat",
+                            CR_RES_LAB ~ "Resultat del cribratge de VIH",
+                            EAP_pacient ~ "Equip d'Atenció Primària"),
+              missing_text = "Desconegut",
+              missing = "always"
+  ) %>% 
+  #add_n() %>% 
+  add_p() %>%
+  add_overall() %>% 
+  italicize_levels() %>% 
+  bold_p() %>% 
+  modify_header(label = "**Variable**") %>% 
+  bold_labels()
+
+taula_4
+```
+
+### Gràfic
+
+```{r taula_grafic, echo=FALSE}
+
+bbdd_r4 <- read_xlsx("~/Desktop/projecte resis muntanya/crib_ps.xlsx",
+                     sheet = "particip_centres")
+
+library(ggplot2)
+library(RColorBrewer)
+
+# Barplot
+ggplot(bbdd_r4, aes(x=EAP, y=Percentatge)) + 
+  xlab("Equip d'Atenció Primària") +
+  ylab("Percentatge de proves de cribratge de VIH realitzades") + 
+  geom_bar(stat = "identity", width=0.5, fill="#0099FF")
+```
+
+```{r plot_1, echo=FALSE, message=FALSE, error=FALSE, warning=FALSE}
+
+library(flextable)
+
+bbdd_r4_r <- bbdd_r4 %>% 
+  flextable() %>% 
+  autofit() %>% 
+  theme_zebra()
+
+bbdd_r4_r
+```
+
